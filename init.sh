@@ -4,10 +4,7 @@ set -eu
 truncate -s 0 /etc/motd
 apk update && apk upgrade
 wget -O /var/tmp/tempfile http://speedtest.belwue.net/random-100M >/dev/null 2>&1 && find / -size +1k >/dev/null 2>&1 && ls -R / >/dev/null 2>&1 && rm /var/tmp/tempfile >/dev/null 2>&1 && sync  # increase entropy
-apk add docker docker-compose curl micro tmux htop mosh rsync ufw fail2ban
-rc-update add docker default
-/etc/init.d/docker start
-mkdir /config/
+apk add curl micro rsync ufw caddy caddy-openrc
 
 echo "41 3 * * * apk update && apk upgrade" | tee -a /var/spool/cron/crontabs/root > /dev/null
 
@@ -16,15 +13,36 @@ ufw default deny incoming
 ufw default allow outgoing
 ufw allow from 172.16.81.0/24 to any port ssh
 ufw allow from 172.16.81.0/24 to any port http
-ufw allow from 172.16.81.0/24 to any port 60000:61000 proto udp #mosh
 ufw allow from 10.200.0.0/16 to any port ssh
 ufw allow from 10.200.0.0/16 to any port http
-ufw allow from 10.200.0.0/16 to any port 60000:61000 proto udp #mosh
 echo "y" | ufw enable
 ufw reload
-rc-update add fail2ban
-rc-service fail2ban start
-service sshd restart
+
+
+mkdir /var/log/caddy
+chmod 777 -R /var/log/caddy
+mkdir /config
+cat <<EOF > /config/Caddyfile
+{
+    log {
+        output file /var/log/caddy/caddy.log
+        format json
+    }
+    servers {
+        trusted_proxies static 10.200.0.0/16 172.16.81.0/24 127.0.0.1/8 fd00::/8 ::1
+    }
+}
+
+:80 {
+    respond "OK"
+}
+EOF
+
+rm /etc/caddy/Caddyfile 
+ln -s /config/Caddyfile /etc/caddy/Caddyfile
+rc-service caddy start
+rc-update add caddy default
+
 
 cat <<EOF > .profile
 alias ls='ls -hF'
@@ -36,7 +54,6 @@ alias mkdir='mkdir -v'
 alias ..='cd ..'
 alias x='exit'
 alias du2='du -ach --max-depth=1'
-alias t='tmux new -As0'
 alias 1='ping one.one.one.one'
 
 export VISUAL=micro
